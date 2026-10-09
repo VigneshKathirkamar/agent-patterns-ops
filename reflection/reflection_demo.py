@@ -151,7 +151,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--model", default="llama3.2")
     p.add_argument("--runs", type=int, default=5)
-    p.add_argument("--max-rounds", type=int, default=2)
+    p.add_argument("--max-rounds", type=int, default=0)
     p.add_argument("--always-reflect", action="store_true")
     args = p.parse_args()
 
