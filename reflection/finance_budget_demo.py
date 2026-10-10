@@ -10,8 +10,6 @@ Same idea as reflection_demo.py, in a setting everyone relates to:
      Any check fails -> the model is told exactly what's wrong ("over by ₹1,200"),
      critiques its own budget and fixes it. Up to --max-rounds times.
 
-Reuses chat() from reflection_demo.py, so keep both files in the same folder.
-
 Usage:
   python finance_budget_demo.py --model llama3.2 --runs 5
   python finance_budget_demo.py --model llama3.2 --runs 5 --always-reflect
@@ -26,8 +24,8 @@ import re
 
 from reflection_demo import chat  # same Ollama call, tokens and timing
 
-# ---------------- SCENARIO (edit freely) ----------------
-INCOME = 85000                                   # monthly take-home, ₹
+# ---------------- SCENARIO ------------------
+INCOME = 100000                                   # monthly take-home, ₹
 FIXED = {"rent": 22000, "car_emi": 9500}         # must be kept exactly
 CATEGORIES = ["rent", "car_emi", "groceries", "utilities", "transport",
               "insurance", "savings", "emergency_fund",
@@ -127,7 +125,7 @@ def check_budget(reply):
     return len(CHECKS) - len(failures), failures
 
 
-# ---------------- Terminal display (made for screen recordings) ----------------
+# ---------------- Terminal display ----------------
 GREEN, RED, YELLOW, CYAN, DIM, BOLD, RESET = (
     "\033[32m", "\033[31m", "\033[33m", "\033[36m", "\033[2m", "\033[1m", "\033[0m")
 
@@ -175,7 +173,8 @@ def one_run(model, max_rounds, always_reflect, run_no, save_dir):
 
     for i in range(1, max_rounds + 1):
         if not failures and not always_reflect:
-            print(f"{GREEN}■ Stop: every rule passed, no reflection needed{RESET}")
+            msg = "no reflection needed" if i == 1 else "fixed by reflection"
+            print(f"{GREEN}■ Stop: every rule passed, {msg}{RESET}")
             break  # stop rule: budget passed every check, don't pay for reflection
         reason = "checks failed" if failures else "always-reflect is on"
         print(f"\n{YELLOW}↻ Reflecting ({reason}): the model reviews its own budget{RESET}")
@@ -197,7 +196,7 @@ def one_run(model, max_rounds, always_reflect, run_no, save_dir):
         if failures:
             print(f"{RED}■ Stop: hit the cap of {max_rounds} reflection rounds{RESET}")
         elif max_rounds:
-            print(f"{GREEN}■ Fixed: every rule passed after reflection{RESET}")
+            print(f"{GREEN}■ Stop: every rule passed, fixed by reflection{RESET}")
     return rounds
 
 
@@ -214,7 +213,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--model", required=True)
     p.add_argument("--runs", type=int, default=5)
-    p.add_argument("--max-rounds", type=int, default=2)
+    p.add_argument("--max-rounds", type=int, default=5)
     p.add_argument("--always-reflect", action="store_true")
     args = p.parse_args()
 
