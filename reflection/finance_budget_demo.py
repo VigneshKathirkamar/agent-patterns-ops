@@ -9,6 +9,8 @@ Same idea as reflection_demo.py, in a setting everyone relates to:
   3. All checks pass -> stop, no extra cost.
      Any check fails -> the model is told exactly what's wrong ("over by ₹1,200"),
      critiques its own budget and fixes it. Up to --max-rounds times.
+  4. Feedback is specific: Python works out the exact numbers to change
+     ("savings ₹13,750 → ₹40,750"), because models are bad at checking their own maths.
 
 Usage:
   python finance_budget_demo.py --model llama3.2 --runs 5
@@ -125,6 +127,47 @@ def check_budget(reply):
     return len(CHECKS) - len(failures), failures
 
 
+def suggest_fix(reply):
+    """Exact changes that would make the budget pass every rule.
+    Python does the arithmetic, so the model only has to copy the numbers."""
+    data = extract_budget(reply)
+    if (data is None or set(data) != set(CATEGORIES)
+            or not all(is_amount(v) for v in data.values())):
+        return []  # the failure messages already explain these problems
+    new = dict(data)
+    new.update(FIXED)
+    new["groceries"] = max(new["groceries"], MIN_GROCERIES)
+    need = INCOME * MIN_SAVINGS_PCT // 100
+
+    # Wants over the cap: scale them all down evenly, rounded to ₹100
+    wants = ["dining_out", "shopping", "entertainment"]
+    total_wants, cap = sum(new[k] for k in wants), INCOME * MAX_WANTS_PCT // 100
+    if total_wants > cap:
+        for k in wants:
+            new[k] = max(100, new[k] * cap // total_wants // 100 * 100)
+        new[max(wants, key=new.get)] -= max(sum(new[k] for k in wants) - cap, 0)
+
+    # Saving too little: top up savings
+    new["savings"] += max(need - new["savings"] - new["emergency_fund"], 0)
+
+    # Total doesn't match income
+    diff = INCOME - sum(new.values())
+    if diff > 0:
+        new["savings"] += diff  # spare money goes to savings, which breaks no rule
+    for k in ["shopping", "dining_out", "entertainment", "transport",
+              "utilities", "insurance", "groceries", "savings", "emergency_fund"]:
+        if diff >= 0:
+            break
+        other = {"savings": "emergency_fund", "emergency_fund": "savings"}.get(k)
+        floor = (MIN_GROCERIES if k == "groceries"
+                 else max(500, need - new[other]) if other else 500)
+        cut = min(-diff, max(new[k] - floor, 0))
+        new[k] -= cut
+        diff += cut
+
+    return [f"{k}: ₹{data[k]:,.0f} → ₹{new[k]:,.0f}" for k in CATEGORIES if new[k] != data[k]]
+
+
 # ---------------- Terminal display ----------------
 GREEN, RED, YELLOW, CYAN, DIM, BOLD, RESET = (
     "\033[32m", "\033[31m", "\033[33m", "\033[36m", "\033[2m", "\033[1m", "\033[0m")
@@ -180,6 +223,13 @@ def one_run(model, max_rounds, always_reflect, run_no, save_dir):
         print(f"\n{YELLOW}↻ Reflecting ({reason}): the model reviews its own budget{RESET}")
         feedback = ("These checks failed:\n" + "\n".join(failures)) if failures \
             else "All checks passed."
+        fix = suggest_fix(reply) if failures else []
+        if fix:
+            feedback += ("\nSuggested fix, with the maths already checked. Change only these "
+                         "and keep every other category the same:\n" + "\n".join(fix))
+            print(f"  {YELLOW}Checker's suggested fix:{RESET}")
+            for line in fix:
+                print(f"    {YELLOW}›{RESET} {line}")
         messages += [{"role": "assistant", "content": reply},
                      {"role": "user", "content": REFLECT.format(feedback=feedback)}]
         reply, tokens, secs = chat(model, messages)
